@@ -3,11 +3,32 @@ from datetime import datetime
 import pytz
 import requests
 import os
+import json
 
 
 # ================= TELEGRAM CONFIG =================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
+
+# ================= STATE MANAGEMENT =================
+STATE_FILE = "state.json"
+
+def load_state():
+    if not os.path.exists(STATE_FILE):
+        return {
+            "last_result": {
+                "current": False,
+                "next": False
+            }
+        }
+
+    with open(STATE_FILE, "r") as f:
+        return json.load(f)
+
+
+def save_state(state):
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f)
 
 
 def send_telegram(message):
@@ -24,6 +45,9 @@ def send_telegram(message):
 
         print("Telegram status code:", response.status_code)
         print("Telegram response:", response.text)
+
+        if response.status_code != 200:
+            print("❌ Telegram message failed!")
 
     except Exception as e:
         print(f"Telegram error: {e}")
@@ -85,47 +109,44 @@ def get_month_name(page):
 def scan_current_and_next_month(page):
     print("\n📅 Checking schedule...\n")
 
-    # CURRENT MONTH
+    # ================= CURRENT MONTH =================
     current_month = get_month_name(page)
     print(f"📍 Current Month: {current_month}")
 
-    if check_availability(page):
-        msg = f"🎉 SLOT FOUND in CURRENT MONTH!\n📅 {current_month}"
-        print(msg)
+    current_available = check_availability(page)
 
+    if current_available:
+        print("🎉 Slot found in current month")
         page.screenshot(path="slot_current.png")
-        send_telegram(msg)
-        return True
+    else:
+        print("❌ No slots in current month")
 
-    print("❌ No slots in current month")
-
-    # NEXT MONTH
+    # ================= NEXT MONTH =================
     next_btn = page.locator(".next").first
 
     if next_btn.count() == 0:
         print("❌ Next month button not found")
-        return False
+        return current_month, current_available, "N/A", False
 
     try:
         next_btn.click(force=True)
         page.wait_for_timeout(2000)
     except Exception as e:
         print(f"Click error: {e}")
-        return False
+        return current_month, current_available, "N/A", False
 
     next_month = get_month_name(page)
     print(f"\n📍 Next Month: {next_month}")
 
-    if check_availability(page):
-        msg = f"🎉 SLOT FOUND in NEXT MONTH!\n📅 {next_month}"
-        print(msg)
+    next_available = check_availability(page)
 
+    if next_available:
+        print("🎉 Slot found in next month")
         page.screenshot(path="slot_next.png")
-        send_telegram(msg)
-        return True
+    else:
+        print("❌ No slots in next month")
 
-    print("❌ No slots in next month")
-    return False
+    return current_month, current_available, next_month, next_available
 
 
 # ================= MAIN BOT =================
@@ -165,12 +186,6 @@ def run_bot():
 
         page.wait_for_load_state("networkidle")
 
-        # test working bot
-        send_telegram(
-            "🤖 <b>Bot Health Check</b>\n"
-            "Status: RUNNING ✅\n"
-            "Time: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        )
 
         # Site
         try:
@@ -198,7 +213,43 @@ def run_bot():
 
         page.wait_for_load_state("networkidle")
 
-        scan_current_and_next_month(page)
+        # Send report if there's a change
+        current_month, current_available, next_month, next_available = scan_current_and_next_month(page)
+        
+        state = load_state()
+        last = state.get("last_result", {"current": False, "next": False})
+
+        messages = []
+
+        # Detect CURRENT month change
+        if current_available != last.get("current"):
+            if current_available:
+                messages.append(f"🎉 SLOT OPENED in CURRENT MONTH\n📅 {current_month}")
+            else:
+                messages.append(f"⚠️ SLOT CLOSED in CURRENT MONTH\n📅 {current_month}")
+
+        # Detect NEXT month change
+        if next_available != last.get("next"):
+            if next_available:
+                messages.append(f"🎉 SLOT OPENED in NEXT MONTH\n📅 {next_month}")
+            else:
+                messages.append(f"⚠️ SLOT CLOSED in NEXT MONTH\n📅 {next_month}")
+
+        # Send only if something changed
+        if messages:
+            report = "📅 PASSPORT CHECK UPDATE\n\n" + "\n\n".join(messages)
+            send_telegram(report)
+
+            # save new state
+            state["last_result"] = {
+                "current": current_available,
+                "next": next_available
+            }
+            save_state(state)
+
+            print("📤 Change detected → Telegram sent")
+        else:
+            print("🟡 No change → no message sent")
 
         context.close()
         browser.close()
