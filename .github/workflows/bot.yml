@@ -2,7 +2,7 @@ name: Passport Slot Checker
 
 on:
   schedule:
-    # Runs every hour from 8AM–6PM PH time (UTC adjusted)
+    # 8AM–6PM PH time (UTC 0–10)
     - cron: "0 0-10 * * *"
   workflow_dispatch:
 

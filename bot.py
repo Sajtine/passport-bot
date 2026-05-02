@@ -160,7 +160,11 @@ def run_bot():
         page.wait_for_load_state("networkidle")
 
         # test working bot
-        send_telegram("✅ TEST: Bot successfully reached schedule page")
+        send_telegram(
+            "🤖 <b>Bot Health Check</b>\n"
+            "Status: RUNNING ✅\n"
+            "Time: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        )
 
         # Site
         try:
