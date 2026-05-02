@@ -151,9 +151,9 @@ def scan_current_and_next_month(page):
 
 # ================= MAIN BOT =================
 def run_bot():
-    # if not is_within_time_window():
-    #     print("⏳ Outside time window")
-    #     return
+    if not is_within_time_window():
+        print("⏳ Outside time window")
+        return
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -213,7 +213,8 @@ def run_bot():
 
         page.wait_for_load_state("networkidle")
 
-        send_telegram("🚀 PASSPORT CHECK STARTED\nChecking for available slots...")
+        # check bot 
+        # send_telegram("🚀 PASSPORT CHECK STARTED\nChecking for available slots...")
 
         # Send report if there's a change
         current_month, current_available, next_month, next_available = scan_current_and_next_month(page)
