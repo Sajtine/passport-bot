@@ -213,9 +213,11 @@ def run_bot():
 
         page.wait_for_load_state("networkidle")
 
+        send_telegram("🚀 PASSPORT CHECK STARTED\nChecking for available slots...")
+
         # Send report if there's a change
         current_month, current_available, next_month, next_available = scan_current_and_next_month(page)
-        
+
         state = load_state()
         last = state.get("last_result", {"current": False, "next": False})
 
