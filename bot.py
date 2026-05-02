@@ -159,6 +159,9 @@ def run_bot():
 
         page.wait_for_load_state("networkidle")
 
+        # test working bot
+        send_telegram("✅ TEST: Bot successfully reached schedule page")
+
         # Site
         try:
             page.wait_for_selector("#SiteID", timeout=10000)
