@@ -13,12 +13,18 @@ CHAT_ID = os.getenv("CHAT_ID")
 def send_telegram(message):
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+
         payload = {
             "chat_id": CHAT_ID,
             "text": message,
             "parse_mode": "HTML"
         }
-        requests.post(url, data=payload)
+
+        response = requests.post(url, data=payload)
+
+        print("Telegram status code:", response.status_code)
+        print("Telegram response:", response.text)
+
     except Exception as e:
         print(f"Telegram error: {e}")
 
