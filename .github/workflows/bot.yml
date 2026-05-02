@@ -2,9 +2,11 @@ name: Passport Slot Checker
 
 on:
   schedule:
-    # 8AM–6PM PH time (UTC 0–10)
     - cron: "0 0-10 * * *"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   run-bot:
@@ -24,12 +26,17 @@ jobs:
           pip install -r requirements.txt
           playwright install --with-deps
 
-      # 📥 LOAD OLD STATE
       - name: Download state
         uses: actions/download-artifact@v4
         with:
           name: bot-state
         continue-on-error: true
+
+      - name: Ensure state file exists
+        run: |
+          if [ ! -f state.json ]; then
+            echo '{"last_result":{"current":false,"next":false}}' > state.json
+          fi
 
       - name: Run bot
         env:
@@ -37,9 +44,9 @@ jobs:
           CHAT_ID: ${{ secrets.CHAT_ID }}
         run: python bot.py
 
-      # 📤 SAVE NEW STATE
       - name: Upload state
         uses: actions/upload-artifact@v4
         with:
           name: bot-state
           path: state.json
+          if-no-files-found: warn
