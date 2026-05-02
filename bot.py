@@ -130,9 +130,9 @@ def scan_current_and_next_month(page):
 
 # ================= MAIN BOT =================
 def run_bot():
-    if not is_within_time_window():
-        print("⏳ Outside time window")
-        return
+    # if not is_within_time_window():
+    #     print("⏳ Outside time window")
+    #     return
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
