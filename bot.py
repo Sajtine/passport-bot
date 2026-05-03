@@ -4,6 +4,8 @@ import pytz
 import requests
 import os
 import json
+import time
+import random
 
 
 # ================= TELEGRAM CONFIG =================
@@ -43,8 +45,7 @@ def send_telegram(message):
 
         response = requests.post(url, data=payload)
 
-        print("Telegram status code:", response.status_code)
-        print("Telegram response:", response.text)
+        print("📨 Telegram status:", response.status_code)
 
         if response.status_code != 200:
             print("❌ Telegram message failed!")
@@ -53,11 +54,32 @@ def send_telegram(message):
         print(f"Telegram error: {e}")
 
 
+# ================= HUMAN DELAY =================
+def human_delay(min_sec=2, max_sec=5):
+    delay = random.uniform(min_sec, max_sec)
+    print(f"⏱ Waiting {delay:.2f}s...")
+    time.sleep(delay)
+
+
 # ================= TIME WINDOW =================
 def is_within_time_window():
     tz = pytz.timezone("Asia/Manila")
     now = datetime.now(tz)
-    return 8 <= now.hour < 18
+    return 8 <= now.hour <= 18
+
+
+# ================= SAFE GOTO =================
+def safe_goto(page, url, retries=3):
+    for attempt in range(retries):
+        try:
+            human_delay(2, 4)
+            print(f"🌐 Loading page (Attempt {attempt+1})...")
+            page.goto(url, timeout=60000, wait_until="domcontentloaded")
+            return True
+        except Exception as e:
+            print(f"⚠️ Goto failed: {e}")
+            human_delay(5, 8)
+    return False
 
 
 # ================= SAFE CLICK =================
@@ -66,6 +88,8 @@ def safe_click(page, selectors, force=False):
         try:
             locator = page.locator(sel).first
             if locator.count() > 0:
+                locator.wait_for(timeout=3000)
+                human_delay(1, 3)
                 locator.click(force=force)
                 return True
         except:
@@ -109,7 +133,7 @@ def get_month_name(page):
 def scan_current_and_next_month(page):
     print("\n📅 Checking schedule...\n")
 
-    # ================= CURRENT MONTH =================
+    # CURRENT MONTH
     current_month = get_month_name(page)
     print(f"📍 Current Month: {current_month}")
 
@@ -121,7 +145,7 @@ def scan_current_and_next_month(page):
     else:
         print("❌ No slots in current month")
 
-    # ================= NEXT MONTH =================
+    # NEXT MONTH
     next_btn = page.locator(".next").first
 
     if next_btn.count() == 0:
@@ -129,8 +153,9 @@ def scan_current_and_next_month(page):
         return current_month, current_available, "N/A", False
 
     try:
+        human_delay(2, 4)
         next_btn.click(force=True)
-        page.wait_for_timeout(2000)
+        human_delay(2, 4)
     except Exception as e:
         print(f"Click error: {e}")
         return current_month, current_available, "N/A", False
@@ -155,109 +180,120 @@ def run_bot():
         print("⏳ Outside time window")
         return
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage"]
-        )
-
-        context = browser.new_context(
-            locale="en-PH",
-            timezone_id="Asia/Manila"
-        )
-
-        page = context.new_page()
-
-        page.goto("https://passport.gov.ph/appointment")
-        page.wait_for_load_state("networkidle")
-
-        # Agree
-        safe_click(page, [
-            "input[type='checkbox']",
-            "label:has-text('I agree')",
-            "text=I Agree"
-        ], force=True)
-
-        # Start
-        safe_click(page, [
-            "button[value='Individual']",
-            "button:has-text('Start Individual Appointment')"
-        ])
-
-        page.wait_for_load_state("networkidle")
-
-
-        # Site
+    for attempt in range(3):
         try:
-            page.wait_for_selector("#SiteID", timeout=10000)
-            page.select_option("#SiteID", value="22")
-        except TimeoutError:
-            print("Site not found")
-            return
+            print(f"\n🔁 Bot run attempt {attempt+1}")
 
-        # Notification
-        try:
-            page.wait_for_selector("#co-notif-checkbox", timeout=10000)
-            safe_click(page, ["label[for='co-notif-checkbox']"])
-        except:
-            pass
+            with sync_playwright() as p:
+                browser = p.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-blink-features=AutomationControlled"
+                    ]
+                )
 
-        # Confirm
-        try:
-            page.locator("input[type='checkbox']").first.click(force=True)
-        except:
-            pass
+                context = browser.new_context(
+                    locale="en-PH",
+                    timezone_id="Asia/Manila"
+                )
 
-        # NEXT
-        safe_click(page, ["text=NEXT", "button:has-text('NEXT')"])
+                page = context.new_page()
 
-        page.wait_for_load_state("networkidle")
+                # LOAD PAGE
+                if not safe_goto(page, "https://passport.gov.ph/appointment"):
+                    raise Exception("Page load failed")
 
-        # check bot 
-        # send_telegram("🚀 PASSPORT CHECK STARTED\nChecking for available slots...")
+                human_delay(3, 6)
 
-        # Send report if there's a change
-        current_month, current_available, next_month, next_available = scan_current_and_next_month(page)
+                # AGREE
+                safe_click(page, [
+                    "input[type='checkbox']",
+                    "label:has-text('I agree')",
+                    "text=I Agree"
+                ], force=True)
 
-        state = load_state()
-        last = state.get("last_result", {"current": False, "next": False})
+                # START
+                safe_click(page, [
+                    "button[value='Individual']",
+                    "button:has-text('Start Individual Appointment')"
+                ])
 
-        messages = []
+                human_delay(3, 6)
 
-        # Detect CURRENT month change
-        if current_available != last.get("current"):
-            if current_available:
-                messages.append(f"🎉 SLOT OPENED in CURRENT MONTH\n📅 {current_month}")
-            else:
-                messages.append(f"⚠️ SLOT CLOSED in CURRENT MONTH\n📅 {current_month}")
+                # SITE SELECT
+                try:
+                    page.wait_for_selector("#SiteID", timeout=15000)
+                    human_delay(1, 3)
+                    page.select_option("#SiteID", value="22")
+                except TimeoutError:
+                    raise Exception("Site dropdown not found")
 
-        # Detect NEXT month change
-        if next_available != last.get("next"):
-            if next_available:
-                messages.append(f"🎉 SLOT OPENED in NEXT MONTH\n📅 {next_month}")
-            else:
-                messages.append(f"⚠️ SLOT CLOSED in NEXT MONTH\n📅 {next_month}")
+                # NOTIFICATION
+                try:
+                    page.wait_for_selector("#co-notif-checkbox", timeout=5000)
+                    safe_click(page, ["label[for='co-notif-checkbox']"])
+                except:
+                    pass
 
-        # Send only if something changed
-        if messages:
-            report = "📅 PASSPORT CHECK UPDATE\n\n" + "\n\n".join(messages)
-            send_telegram(report)
+                # CONFIRM
+                try:
+                    human_delay(1, 2)
+                    page.locator("input[type='checkbox']").first.click(force=True)
+                except:
+                    pass
 
-            # save new state
-            state["last_result"] = {
-                "current": current_available,
-                "next": next_available
-            }
-            save_state(state)
+                # NEXT
+                safe_click(page, ["text=NEXT", "button:has-text('NEXT')"])
 
-            print("📤 Change detected → Telegram sent")
-        else:
-            print("🟡 No change → no message sent")
+                human_delay(4, 7)
 
-        context.close()
-        browser.close()
+                # SCAN
+                current_month, current_available, next_month, next_available = scan_current_and_next_month(page)
+
+                state = load_state()
+                last = state.get("last_result", {"current": False, "next": False})
+
+                messages = []
+
+                if current_available != last.get("current"):
+                    if current_available:
+                        messages.append(f"🎉 SLOT OPENED in CURRENT MONTH\n📅 {current_month}")
+                    else:
+                        messages.append(f"⚠️ SLOT CLOSED in CURRENT MONTH\n📅 {current_month}")
+
+                if next_available != last.get("next"):
+                    if next_available:
+                        messages.append(f"🎉 SLOT OPENED in NEXT MONTH\n📅 {next_month}")
+                    else:
+                        messages.append(f"⚠️ SLOT CLOSED in NEXT MONTH\n📅 {next_month}")
+
+                if messages:
+                    report = "📅 PASSPORT CHECK UPDATE\n\n" + "\n\n".join(messages)
+                    send_telegram(report)
+
+                    state["last_result"] = {
+                        "current": current_available,
+                        "next": next_available
+                    }
+                    save_state(state)
+
+                    print("📤 Change detected → Telegram sent")
+                else:
+                    print("🟡 No change → no message sent")
+
+                context.close()
+                browser.close()
+                return
+
+        except Exception as e:
+            print(f"❌ Run failed: {e}")
+            human_delay(5, 8)
+
+    print("💀 Bot failed after all retries")
 
 
 # ================= ENTRY POINT =================
 if __name__ == "__main__":
-    run_bot()   
+    run_bot()
